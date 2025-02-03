@@ -69,9 +69,12 @@ def main():
                             progress_bar.progress((i + 1) / len(qa_pairs))
                     
                     st.session_state.grading_results = results
-                
-            # Display results
-            if st.session_state.grading_results:
+                    
+                    # Display results immediately after grading
+                    display_results(st.session_state.grading_results)
+            
+            # Also display results if they exist in session state
+            elif st.session_state.grading_results:
                 display_results(st.session_state.grading_results)
                 
         except Exception as e:
