@@ -1,0 +1,167 @@
+Project Title:
+AI-Powered Assignment Grading MVP with User-Provided OpenAI API Key and PDF/DOC File Upload
+
+Overview:
+Develop a Streamlit-based web application that automates grading student assignment answers using the OpenAI API. Instructors can upload assignment files in PDF or DOC (Word) formats containing questions and student answers, as well as provide a grading rubric and their OpenAI API key via the UI. The system processes each answer, generates a numerical score (e.g., out of 10), and returns detailed, actionable feedback.
+
+Core Requirements:
+User Interface (UI):
+
+Dashboard:
+Build an intuitive Streamlit dashboard.
+Include sections for:
+File Upload: Allow instructors to upload PDF or DOC files.
+Rubric Input: Provide a text area or structured form to enter grading criteria.
+OpenAI API Key Input: Include an input field for users to enter their own API key (using st.text_input with type="password").
+File Upload Handling:
+Ensure that the app accepts PDF and DOC files.
+Provide instructions on the file format (e.g., "Upload your assignment file in PDF or DOC format.").
+Manual Overrides:
+Allow instructors to manually adjust scores or feedback when necessary.
+File Processing & Text Extraction:
+
+PDF Files:
+Use a library such as PyPDF2, pdfminer.six, or pypdf to extract text from uploaded PDF files.
+Example snippet using PyPDF2:
+python
+Copy
+import PyPDF2
+def extract_text_from_pdf(file):
+    pdf_reader = PyPDF2.PdfReader(file)
+    text = ""
+    for page in pdf_reader.pages:
+        text += page.extract_text() or ""
+    return text
+DOC/DOCX Files:
+Use the python-docx library to extract text from Word documents.
+Example snippet using python-docx:
+python
+Copy
+import docx
+def extract_text_from_doc(file):
+    doc = docx.Document(file)
+    text = "\n".join([para.text for para in doc.paragraphs])
+    return text
+File Type Detection:
+Detect the file type (e.g., by file extension or using a library like python-magic) and call the appropriate text extraction function.
+Display an error if the file format is not supported.
+Grading Engine with OpenAI API:
+
+Dynamic Prompt Generation:
+For each student answer extracted from the document, generate a prompt that includes:
+The original question.
+The student’s answer.
+The grading rubric/criteria.
+Example Prompt Template:
+python
+Copy
+prompt = f"""
+Evaluate the following answer:
+Question: {question}
+Student Answer: {student_answer}
+Grading Criteria: {rubric}
+Please provide a numerical grade out of 10, a brief explanation for the grade, and specific suggestions for improvement. Also, include your step-by-step reasoning.
+"""
+API Call & Response Parsing:
+Use the OpenAI Python library with the API key supplied via the UI to call the API.
+Parse the response to extract:
+A numerical grade.
+Detailed, actionable feedback.
+Optionally, a chain-of-thought explanation.
+Error Handling:
+Gracefully manage API rate limits, network issues, and unexpected responses.
+Use caching (e.g., Streamlit caching decorators) to avoid redundant API calls.
+Results & Data Visualization:
+
+Display Individual Results:
+Present each question, the extracted student answer, the assigned score, and detailed feedback.
+Summary Statistics:
+Provide overall metrics such as:
+Average score.
+Grade distribution (using bar charts or histograms).
+Common themes in feedback.
+Downloadable Reports:
+Enable downloading of graded results (e.g., as CSV or PDF).
+Technical Considerations:
+
+Project Structure:
+app.py: Main Streamlit application file.
+grading_engine.py: Module for prompt construction and API interactions.
+file_processing.py: Module for handling file uploads and text extraction from PDFs and DOC files.
+requirements.txt: List all dependencies (e.g., Streamlit, PyPDF2, python-docx, OpenAI).
+Deployment:
+Provide clear documentation for local deployment and instructions for deploying on platforms such as Streamlit Cloud.
+Documentation:
+Include a README.md with instructions on usage, file format requirements, and setup/deployment steps.
+Implementation Details for the API Key Input & File Processing:
+OpenAI API Key Input via UI:
+
+python
+Copy
+import streamlit as st
+
+# API key input field (hiding the input for security)
+openai_api_key = st.text_input("Enter your OpenAI API key", type="password")
+if openai_api_key:
+    st.session_state["openai_api_key"] = openai_api_key
+File Upload & Type Detection Example:
+
+python
+Copy
+import streamlit as st
+from io import BytesIO
+
+uploaded_file = st.file_uploader("Upload a PDF or DOC file", type=["pdf", "doc", "docx"])
+file_text = ""
+if uploaded_file is not None:
+    file_extension = uploaded_file.name.split('.')[-1].lower()
+    if file_extension == "pdf":
+        file_text = extract_text_from_pdf(uploaded_file)
+    elif file_extension in ["doc", "docx"]:
+        file_text = extract_text_from_doc(uploaded_file)
+    else:
+        st.error("Unsupported file format. Please upload a PDF or DOC file.")
+Using the Extracted Text:
+
+Once text is extracted, process it to identify individual questions and answers. This might involve:
+Parsing based on known formatting or delimiters.
+Allowing the user to confirm or adjust the parsing if necessary.
+Grading Engine Integration:
+
+Call the grading engine with each parsed question and answer using the user-supplied API key.
+Project Milestones:
+Setup & UI Development:
+
+Build the basic Streamlit dashboard.
+Implement file upload functionality for PDF/DOC files.
+Create UI components for the API key and rubric input.
+File Processing Module:
+
+Implement text extraction from PDF files using libraries like PyPDF2.
+Implement text extraction from DOC files using python-docx.
+Test file type detection and extraction accuracy.
+API Integration & Grading Logic:
+
+Develop the grading engine that constructs prompts and calls the OpenAI API.
+Test with sample extracted text to ensure proper prompt generation and response parsing.
+Batch Processing & Results Display:
+
+Integrate batch processing for multiple questions and answers extracted from the files.
+Display individual scores and detailed feedback on the dashboard.
+Statistics & Reporting:
+
+Implement summary statistics and visualizations.
+Add functionality for downloading graded reports.
+Testing, Error Handling & Documentation:
+
+Write unit tests for file processing and API calls.
+Implement error handling for unsupported file types, API errors, and parsing issues.
+Finalize documentation and setup instructions.
+Deliverables:
+A fully functional Streamlit web application that:
+Accepts PDF and DOC file uploads, extracts text, and processes student answers.
+Allows users to securely input their own OpenAI API key via the UI.
+Processes the extracted text to generate scores and detailed feedback using the OpenAI API.
+Displays interactive results with visualizations and provides an option for manual overrides.
+Well-documented code with clear setup, deployment, and usage instructions.
+Unit tests and robust error handling mechanisms.
