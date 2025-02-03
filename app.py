@@ -49,24 +49,26 @@ def main():
                 # Process the text into Q&A pairs
                 qa_pairs = processor.extract_qa_pairs(file_text)
                 
-                grading_engine = GradingEngine(api_key)
-                
-                # Grade each answer
-                results = []
-                progress_bar = st.progress(0)
-                
-                for i, (question, answer) in enumerate(qa_pairs):
-                    with st.spinner(f'Grading question {i+1}/{len(qa_pairs)}...'):
-                        result = grading_engine.grade_answer(
-                            question=question,
-                            answer=answer,
-                            rubric=rubric,
-                            max_score=max_score
-                        )
-                        results.append(result)
-                        progress_bar.progress((i + 1) / len(qa_pairs))
-                
-                st.session_state.grading_results = results
+                # Add grade button
+                if st.button("Grade Assignment"):
+                    grading_engine = GradingEngine(api_key)
+                    
+                    # Grade each answer
+                    results = []
+                    progress_bar = st.progress(0)
+                    
+                    for i, (question, answer) in enumerate(qa_pairs):
+                        with st.spinner(f'Grading question {i+1}/{len(qa_pairs)}...'):
+                            result = grading_engine.grade_answer(
+                                question=question,
+                                answer=answer,
+                                rubric=rubric,
+                                max_score=max_score
+                            )
+                            results.append(result)
+                            progress_bar.progress((i + 1) / len(qa_pairs))
+                    
+                    st.session_state.grading_results = results
                 
             # Display results
             if st.session_state.grading_results:
