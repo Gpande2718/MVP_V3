@@ -17,4 +17,3 @@ langchain
 langchain_community
 fpdf
 PyCryptodome 
-faiss-cpu
