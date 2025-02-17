@@ -1,149 +1,152 @@
+import os
+import random
+from io import BytesIO
+import zipfile
+
 import streamlit as st
-from file_processing import FileProcessor
-from grading_engine import GradingEngine
-import pandas as pd
-import plotly.express as px
-from pathlib import Path
-import json
+import openai
+from fpdf import FPDF
 
-def initialize_session_state():
-    if "grading_results" not in st.session_state:
-        st.session_state.grading_results = []
-    if "current_file_text" not in st.session_state:
-        st.session_state.current_file_text = ""
+# Set your OpenAI API key from the environment variable
+openai.api_key = os.getenv("OPENAI_API_KEY")
+if not openai.api_key:
+    st.error("OpenAI API key not found! Please set the OPENAI_API_KEY environment variable.")
 
-def main():
-    st.title("AI-Powered Assignment Grading System")
-    
-    initialize_session_state()
-    
-    # Sidebar for configuration
-    with st.sidebar:
-        st.header("Configuration")
-        api_key = st.text_input("Enter OpenAI API key", type="password")
-        
-        st.header("Grading Rubric")
-        rubric = st.text_area(
-            "Enter grading criteria",
-            help="Specify the grading criteria for evaluating answers"
-        )
-        
-        max_score = st.number_input("Maximum score per question", min_value=1, value=10)
-
-    # Main content area
-    uploaded_file = st.file_uploader("Upload assignment file (PDF/DOC/DOCX)", 
-                                   type=['pdf', 'doc', 'docx'])
-
-    if uploaded_file and api_key and rubric:
-        try:
-            processor = FileProcessor()
-            file_text = processor.process_file(uploaded_file)
-            
-            if file_text != st.session_state.current_file_text:
-                st.session_state.current_file_text = file_text
-                
-                # Display extracted text for verification
-                with st.expander("View extracted text"):
-                    st.text(file_text)
-                
-                # Process the text into Q&A pairs
-                qa_pairs = processor.extract_qa_pairs(file_text)
-                
-                # Add grade button
-                if st.button("Grade Assignment"):
-                    grading_engine = GradingEngine(api_key)
-                    
-                    # Grade each answer
-                    results = []
-                    progress_bar = st.progress(0)
-                    
-                    for i, (question, answer) in enumerate(qa_pairs):
-                        with st.spinner(f'Grading question {i+1}/{len(qa_pairs)}...'):
-                            result = grading_engine.grade_answer(
-                                question=question,
-                                answer=answer,
-                                rubric=rubric,
-                                max_score=max_score
-                            )
-                            results.append(result)
-                            progress_bar.progress((i + 1) / len(qa_pairs))
-                    
-                    st.session_state.grading_results = results
-                    
-                    # Display results immediately after grading
-                    display_results(st.session_state.grading_results)
-            
-            # Also display results if they exist in session state
-            elif st.session_state.grading_results:
-                display_results(st.session_state.grading_results)
-                
-        except Exception as e:
-            st.error(f"An error occurred: {str(e)}")
-
-def display_results(results):
-    st.header("Grading Results")
-    
-    # Calculate statistics
-    scores = [result['score'] for result in results]
-    avg_score = sum(scores) / len(scores)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Average Score", f"{avg_score:.2f}")
-    with col2:
-        st.metric("Total Questions", len(results))
-    
-    # Create a DataFrame for the results
-    df = pd.DataFrame(results)
-    
-    # Plot score distribution
-    fig = px.histogram(df, x='score', 
-                      title='Score Distribution',
-                      labels={'score': 'Score', 'count': 'Number of Questions'})
-    st.plotly_chart(fig)
-    
-    # Display individual results with manual override capability
-    for i, result in enumerate(results):
-        with st.expander(f"Question {i+1} - Score: {result['score']}"):
-            st.write("**Question:**", result['question'])
-            st.write("**Answer:**", result['answer'])
-            st.write("**Feedback:**", result['feedback'])
-            
-            # Manual override
-            new_score = st.number_input(
-                "Override score",
-                min_value=0.0,
-                max_value=10.0,
-                value=float(result['score']),
-                key=f"override_{i}"
-            )
-            new_feedback = st.text_area(
-                "Override feedback",
-                value=result['feedback'],
-                key=f"feedback_{i}"
-            )
-            
-            if st.button("Update", key=f"update_{i}"):
-                st.session_state.grading_results[i]['score'] = new_score
-                st.session_state.grading_results[i]['feedback'] = new_feedback
-                st.success("Updated successfully!")
-    
-    # Export results
-    if st.button("Download Results"):
-        export_results(results)
-
-def export_results(results):
-    # Create DataFrame
-    df = pd.DataFrame(results)
-    
-    # Save to CSV
-    csv = df.to_csv(index=False)
-    st.download_button(
-        label="Download CSV",
-        data=csv,
-        file_name="grading_results.csv",
-        mime="text/csv"
+# ------------------------------------------------------------------
+# Function: simulate GAN refinement via a second prompt
+# ------------------------------------------------------------------
+def refine_solution_with_gan(raw_text: str) -> str:
+    refinement_prompt = (
+        "You are an expert in refining student exam answers to sound more natural and human-like. "
+        "Review the following raw answer and adjust it by adding natural language cues, slight imperfections, "
+        "and a conversational tone (while keeping it clear and relevant):\n\n"
+        f"{raw_text}\n\n"
+        "Now, provide a refined version of this answer."
     )
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o",  # or use "gpt-4" if preferred
+            messages=[
+                {"role": "system", "content": "You are a language refinement expert."},
+                {"role": "user", "content": refinement_prompt}
+            ],
+            temperature=0.6,
+            max_tokens=1000,
+        )
+        refined_text = response.choices[0].message.content.strip()
+    except Exception as e:
+        refined_text = raw_text + f"\n\n[Refinement error: {str(e)}]"
+    return refined_text
 
-if __name__ == "__main__":
-    main() 
+# ------------------------------------------------------------------
+# Function: generate a raw student solution using GPT-4 (updated syntax)
+# then refine it to simulate a GAN-style output.
+# ------------------------------------------------------------------
+def generate_solution(questions: list, performance: str, student_number: int) -> str:
+    prompt = (
+        "You are a student taking an exam. The following are exam questions:\n" +
+        "".join([f"\nQuestion {i+1}: {q}" for i, q in enumerate(questions)]) +
+        "\n\n"
+        f"Your performance level is \"{performance}\". Answer accordingly:\n"
+        "- For \"excellent\": provide a detailed, well-structured answer.\n"
+        "- For \"average\": provide a mostly correct answer with minor omissions.\n"
+        "- For \"poor\": provide an answer that is brief and shows misunderstandings.\n\n"
+        "Generate a realistic student solution as if written during an exam."
+    )
+    try:
+        raw_response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a student answering exam questions."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=1000,
+        )
+        raw_solution = raw_response.choices[0].message.content.strip()
+    except Exception as e:
+        raw_solution = f"Error generating solution: {str(e)}"
+    
+    refined_solution = refine_solution_with_gan(raw_solution)
+    final_solution = f"Student {student_number} - Performance: {performance.upper()}\n\n" + refined_solution
+    return final_solution
+
+# ------------------------------------------------------------------
+# Streamlit Application Layout
+# ------------------------------------------------------------------
+st.title("AI-Generated Dummy Solutions with GAN Simulation")
+
+st.write(
+    "Upload a sample question paper (TXT or PDF) to generate dummy student solutions. "
+    "Each solution is generated using GPT-4 (with updated API syntax) and then refined via a second prompt "
+    "to mimic human-like variations. You can choose how many solutions to generate."
+)
+
+# Allow user to input the number of solutions to generate.
+num_solutions = st.number_input("Number of solutions to generate", min_value=1, max_value=100, value=20, step=1)
+
+# File uploader: accepts TXT or PDF files.
+uploaded_file = st.file_uploader("Upload Question Paper", type=["txt", "pdf"])
+
+if uploaded_file is not None:
+    file_text = ""
+    if uploaded_file.type == "text/plain":
+        file_text = uploaded_file.read().decode("utf-8")
+    elif uploaded_file.type == "application/pdf":
+        try:
+            from PyPDF2 import PdfReader
+        except ImportError:
+            st.error("PyPDF2 is required to extract text from PDF files. Please install it with 'pip install PyPDF2'.")
+        else:
+            pdf_reader = PdfReader(uploaded_file)
+            for page in pdf_reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    file_text += extracted + "\n"
+    
+    if not file_text:
+        st.error("Could not extract text from the uploaded file.")
+    else:
+        st.subheader("Question Paper Content:")
+        st.text(file_text)
+        
+        # Parse questions: lines ending with '?' are considered as questions.
+        questions = [line.strip() for line in file_text.split("\n") if line.strip().endswith("?")]
+        if not questions:
+            questions = [file_text.strip()]
+        st.write(f"Identified {len(questions)} question(s) in the uploaded paper.")
+        
+        if st.button("Generate Dummy Solutions"):
+            zip_buffer = BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                for i in range(1, num_solutions + 1):
+                    # Randomly assign a performance level.
+                    performance = random.choices(
+                        ["excellent", "average", "poor"],
+                        weights=[0.2, 0.6, 0.2]
+                    )[0]
+                    
+                    # Generate and refine the solution.
+                    solution_text = generate_solution(questions, performance, i)
+                    
+                    # Create a PDF for the solution.
+                    pdf = FPDF()
+                    pdf.unifontsubset = False  # Fix: define the attribute to avoid AttributeError
+                    pdf.add_page()
+                    pdf.set_font("Arial", size=12)  # Ensure current_font is set
+                    for line in solution_text.split("\n"):
+                        safe_line = line.encode("latin1", "replace").decode("latin1")
+                        pdf.multi_cell(0, 10, txt=safe_line)
+                    
+                    pdf_data = pdf.output(dest="S").encode("latin1")
+                    pdf_filename = f"dummy_solution_student_{i}.pdf"
+                    zip_file.writestr(pdf_filename, pdf_data)
+            
+            zip_buffer.seek(0)
+            st.success("Dummy solutions generated successfully!")
+            st.download_button(
+                "Download Dummy Solutions (ZIP)",
+                data=zip_buffer,
+                file_name="dummy_solutions.zip",
+                mime="application/zip"
+            )
